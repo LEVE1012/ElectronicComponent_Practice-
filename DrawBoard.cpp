@@ -1,6 +1,9 @@
 #include "DrawBoard.h"
 #include "windows.h"
 #include <vector>
+#include <queue>
+#include <unordered_map>
+#include <unordered_set>
 #pragma region 绑定
 wxBEGIN_EVENT_TABLE(DrawBoard, wxPanel)
 EVT_PAINT(DrawBoard::OnPaint)
@@ -19,6 +22,7 @@ DrawBoard::DrawBoard(wxFrame* parent) : wxPanel(parent)
     this->Bind(wxEVT_CHAR_HOOK, &DrawBoard::OnKeyDown, this);
     //电路元器件
     wxPoint ppp = wxPoint(100, 100);
+
 
 
     //归位
@@ -46,7 +50,7 @@ void DrawBoard::OnPaint(wxPaintEvent& event) {
     memDC.SetBackground(*wxWHITE_BRUSH);
     memDC.Clear();
 #pragma endregion
-    AStarSearchPath(wxPoint(100, 100), wxPoint(200, 200), memDC);
+    SearchPath(wxPoint(100, 100), wxPoint(200, 200), memDC);
     //元器件绘制
     for (auto& component : Components) {
         component.Show(memDC);
@@ -461,41 +465,140 @@ void DrawBoard::OnKeyUp(wxKeyEvent& event) {
 }
 #pragma endregion
 
-
-
 //点是否在圆范围内
 bool DrawBoard::IsPointInCircle(const wxPoint& mousePos, const wxPoint& circlePos, int radius) {
     int distance = pow(mousePos.x - circlePos.x, 2) + pow(mousePos.y - circlePos.y, 2);
     return distance <= radius * radius;
 }
 
-void DrawBoard::AStarSearchPath(wxPoint startPoint, wxPoint endPoint, wxMemoryDC& memDC) {
+//A*算法寻路
+struct Node {
+    int x, y;
+    float g, h, f;
+    Node* parent;
+    Node(int _x, int _y) :x(_x), y(_y), g(0), h(0), f(0), parent(nullptr) {}
+};
+
+struct compareNode {
+    bool operator()(Node* a, Node* b) {
+        return a->f > b->f;
+    }
+};
+
+#pragma region A*算法有关函数
+//返回曼哈顿距离
+float heuristic(Node* a, Node* b) {
+    return pow((a->x - b->x), 2) + pow((a->y - b->y), 2);
+}
+
+//插值映射网格点
+wxPoint mapToGirdWithInterpolation(int x, int y, int GRID_SIZE) {
+    double gridX = static_cast<double>(x) / GRID_SIZE;
+    double gridY = static_cast<double>(y) / GRID_SIZE;
+    return wxPoint(std::round(gridX), static_cast<int>(std::round(gridY)));
+}
+
+//获取邻居节点
+std::vector<Node*> getNeighbors(Node* node, const std::vector<std::vector<bool>> grid) {
+    std::vector<Node*> neighbors;
+    int directions[4][2] = { {0, 1}, {1, 0}, {0, -1}, {-1, 0} };
+    for (auto& dir : directions) {
+        int nx = node->x + dir[0], ny = node->y + dir[1];
+        if (nx >= 0 && ny >= 0 && nx < grid.size() && ny < grid[0].size() && grid[nx][ny]) {
+            neighbors.push_back(new Node(nx, ny));
+        }
+    }
+    return neighbors;
+}
+
+std::vector<Node*> A_star(Node* start, Node* goal, std::vector<std::vector<bool>>grid) {
+    std::priority_queue<Node*, std::vector<Node*>, compareNode> openSet;//开放列表
+    std::unordered_set<Node*> openSetSet;//辅助开放列表
+    std::unordered_set<Node*> closeSet;//关闭列表
+    start->g = 0;
+    start->h = heuristic(start, goal);
+    start->f = start->g + start->h;
+    openSet.push(start);
+    openSetSet.insert(start);
+
+    while (!openSet.empty()) {
+        Node* current = openSet.top();
+        openSet.pop();
+        openSetSet.erase(current);
+        closeSet.insert(current);
+
+        //已经到达终点
+        if (current->x == goal->x && current->y == goal->y) {
+            std::vector<Node*>path;
+            while (current) {
+                path.push_back(current);
+                current = current->parent;
+            }
+            reverse(path.begin(), path.end());
+            return path;
+        }
+
+        for (auto& neighbor : getNeighbors(current, grid)) {
+            if (closeSet.find(neighbor) != closeSet.end()) {
+                continue;
+            }
+
+            int tentative_g = current->g + 1;
+
+            if (openSetSet.find(neighbor) == openSetSet.end() && grid[neighbor->x][neighbor->y]) {
+                neighbor->g = tentative_g;
+                neighbor->h = heuristic(neighbor, goal);
+                neighbor->f = neighbor->g + neighbor->h;
+
+                neighbor->parent = current;
+                openSet.push(neighbor);
+                openSetSet.insert(neighbor);
+            }
+            
+            else if (tentative_g < neighbor->g && grid[neighbor->x][neighbor->y]) {
+                neighbor->g = tentative_g;
+                neighbor->f = neighbor->g + neighbor->h;
+                neighbor->parent = current;
+            }
+        }
+    }
+
+    return{};//没有路径
+}
+
+#pragma endregion
+
+
+void DrawBoard::SearchPath(wxPoint startPoint, wxPoint endPoint, wxMemoryDC& memDC) {
     wxGraphicsContext* gc = wxGraphicsContext::Create(memDC);
     gc->SetPen(wxPen(wxColour(0, 0, 255), 3));
     if (gc) {
         barrierStorage.clear();
         bool isCollipse = false;
+        //存元器件
         for (auto& component : Components) {
             Barrier barrier = {
-                component.points[0],
-                component.points[1],
-                component.points[2],
-                component.points[3]
+                component.points[0] + wxPoint(-5, -5),
+                component.points[1] + wxPoint(-5, +5),
+                component.points[2] + wxPoint(+5, -5),
+                component.points[3] + wxPoint(+5, +5)
             };
             barrierStorage.push_back(barrier);
         }
-
+        //第一个转折点
         wxPoint turnOffPoint = wxPoint((startPoint.x + endPoint.x) / 2, startPoint.y);
+        //第二个转折点
         wxPoint turnBackPoint = wxPoint((startPoint.x + endPoint.x) / 2, endPoint.y);
-
+        //检测是否碰撞
         for (auto& rectangle : barrierStorage) {
-            //此时有三条线段 startPoint->turnOffPoint, turnOffPoint->turnBackPoint, turnBackPoint->endPoint
+            //此时有三条线段 startPoint->turnOffPoint, turnOffPoint->turnBackPoint, turnBackPoint->endPoint，任何一条线段碰上都会造成线段路径修改
             if (isSegmentIntersectRectangle(startPoint, turnOffPoint, rectangle) ||
                 isSegmentIntersectRectangle(turnOffPoint, turnBackPoint, rectangle) ||
                 isSegmentIntersectRectangle(turnBackPoint, endPoint, rectangle)) {
                 isCollipse = true;
             }
         }
+        //未发生碰撞
         if (!isCollipse) {
             wxGraphicsPath path = gc->CreatePath();
             path.MoveToPoint(startPoint);
@@ -504,16 +607,52 @@ void DrawBoard::AStarSearchPath(wxPoint startPoint, wxPoint endPoint, wxMemoryDC
             path.AddLineToPoint(endPoint);
             gc->StrokePath(path);
         }
-    }
-}
+        //发生碰撞
+        else {
+            const int GRID_SIZE = 20;
+            const int WIDTH = 1500;
+            const int HEIGHT = 800;
 
+            int cols = WIDTH / GRID_SIZE;
+            int rows = HEIGHT / GRID_SIZE;
+            startPoint = mapToGirdWithInterpolation(startPoint.x, startPoint.y, 20);
+            endPoint = mapToGirdWithInterpolation(endPoint.x, endPoint.y, 20);
+            Node* start = new Node(startPoint.x, startPoint.y);
+            Node* goal = new Node(endPoint.x, endPoint.y);
+
+            std::vector<std::vector<bool>> grid(rows, std::vector<bool>(cols, 1));//图
+            for (const auto& barrier : barrierStorage) {
+                int startX = barrier.leftUpNode.x / GRID_SIZE;
+                int startY = barrier.leftUpNode.y / GRID_SIZE;
+                int endX = barrier.rightDownNode.x / GRID_SIZE;
+                int endY = barrier.rightDownNode.y / GRID_SIZE;
+
+                for (int i = startY; i <= endY; i++) {
+                    for (int j = startX; j <= endX; j++) {
+                        grid[i][j] = 0;//0表示障碍物
+                    }
+                }
+            }
+            std::vector<Node*> nodePath = A_star(start, goal, grid);
+            wxGraphicsPath path = gc->CreatePath();
+            path.MoveToPoint(start->x * GRID_SIZE, start->y * GRID_SIZE);
+            for (const auto& node : nodePath) {
+                path.AddLineToPoint(node->y * GRID_SIZE, node->x * GRID_SIZE);
+            }
+            gc->StrokePath(path);
+
+        }
+    }
+    delete gc;
+}
+#pragma region 计算是否与直线相交的函数
 float crossProduct(const wxPoint& p1, const wxPoint& p2, const wxPoint& p3) {
     return (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
 }
 
 bool isOnSegment(const wxPoint p1, const wxPoint& p2, const wxPoint& q) {
     return(q.x >= std::min(p1.x, p2.x) && q.x <= std::max(p1.x, p2.x) &&
-           q.y >= std::min(p1.y, p2.y) && q.y <= std::max(p1.y, p2.y));
+        q.y >= std::min(p1.y, p2.y) && q.y <= std::max(p1.y, p2.y));
 }
 
 bool doLinesIntersect(const wxPoint& p1, const wxPoint& p2, const wxPoint& q1, const wxPoint& q2) {
@@ -542,3 +681,8 @@ bool DrawBoard::isSegmentIntersectRectangle(const wxPoint& p1, const wxPoint& p2
     }
     return false;
 }
+#pragma endregion
+
+
+
+
