@@ -16,31 +16,17 @@ public:
 	bool isFreeDrawing;//普通曲线绘制状态
 	bool isBezierDrawing;//贝塞尔曲线绘制状态
 
-
-
-
-
-
 	//电路元器件有关
 	bool isConnecting;
-	wxPoint firstPoint;
-	float firstScale;
-	float secondScale;
-	float isFirstOut;
-	std::vector<Connection> connections;//元器件连线列表
-
-
 
 	bool placingAndGate;//布置状态
 	bool placingOrGate;
 	bool placingNotGate;
 
-
 	wxPoint XYoffset;
 	wxPoint connectStartPoint;
 	wxPoint connectEndPoint;
 
-	wxPoint currentLineEnd;
 	wxPoint startPoint;//首端点
 	wxPoint endPoint;//尾端点
 	wxPoint mousePos;//鼠标位置点
@@ -61,6 +47,7 @@ public:
 	std::vector<BezierCurve> bezierCurveStorage;//所有贝塞尔曲线列表
 
 	std::vector<Component> Components;//元器件列表
+	
 	struct Barrier {
 		wxPoint leftUpNode;
 		wxPoint leftDownNode;
@@ -68,7 +55,6 @@ public:
 		wxPoint rightDownNode;
 	};
 	std::vector<Barrier> barrierStorage;//存储障碍物的列表
-
 	std::vector<std::pair<wxPoint, wxPoint>> electronicLines;
 
 	void OnPaint(wxPaintEvent& event);
@@ -84,8 +70,8 @@ public:
 	void DrawCubicBezier(wxGraphicsContext* gc, bool isWithLine, const wxPoint p1, const wxPoint p2, const wxPoint p3, const wxPoint p4);
 	bool IsPointInCircle(const wxPoint& mousePos, const wxPoint& circlePos, int radius);
 	void SnapToGrid(const wxPoint& pos, int gridSize);
-	void AStarSearchPath(wxPoint startPoint, wxPoint endPoint, wxMemoryDC& memDC);
 	bool isSegmentIntersectRectangle(const wxPoint& p1, const wxPoint& p2, const Barrier& rectangle);
+	void SearchPath(wxPoint startPoint, wxPoint endPoint, wxMemoryDC& memDC);
 	
 	wxDECLARE_EVENT_TABLE();
 };

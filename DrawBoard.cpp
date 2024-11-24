@@ -4,6 +4,7 @@
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
+#include <chrono>
 #pragma region 绑定
 wxBEGIN_EVENT_TABLE(DrawBoard, wxPanel)
 EVT_PAINT(DrawBoard::OnPaint)
@@ -50,13 +51,13 @@ void DrawBoard::OnPaint(wxPaintEvent& event) {
     memDC.SetBackground(*wxWHITE_BRUSH);
     memDC.Clear();
 #pragma endregion
-    SearchPath(wxPoint(100, 100), wxPoint(200, 200), memDC);
+    if (isConnecting) {
+        SearchPath(connectStartPoint, connectEndPoint, memDC);
+    }
     //元器件绘制
     for (auto& component : Components) {
         component.Show(memDC);
-        if (component.beConnected) {
-
-        }
+        
     }
     
     wxGraphicsContext* gc = wxGraphicsContext::Create(memDC);
@@ -92,9 +93,8 @@ void DrawBoard::OnPaint(wxPaintEvent& event) {
         gc->SetPen(wxPen(wxColour(0, 0, 0), 1));
         gc->SetBrush(*wxTRANSPARENT_BRUSH);
 
-        //元器件连线
-        for (const auto& connection : connections) {
-            gc->StrokeLine(connection.startPoint.x, connection.startPoint.y, connection.endPoint.x, connection.endPoint.y);
+        for (const auto& line : electronicLines) {
+            SearchPath(line.first, line.second, memDC);
         }
 
 #pragma region 线绘制
@@ -283,7 +283,11 @@ void DrawBoard::OnMouseMove(wxMouseEvent& event) {
             component.center = mousePos - XYoffset;
         }
     }
-   
+
+    //元器件连接状态
+    if (isConnecting) {
+        connectEndPoint = mousePos;
+    }
 #pragma region 线绘制
     if (isLineDrawing && firstPointSet) {
         endPoint = mousePos;
@@ -305,7 +309,9 @@ void DrawBoard::OnLeftClick(wxMouseEvent& event) {
     wxPoint mousePosition = event.GetPosition();
     
     for (auto& component : Components) {
+        size_t index = 0;
         if (component.PointInside(mousePosition)) {
+            component.showPoints = true;
             //点在四周圈内
             for (int i = 0; i < 4; i++) {
                 if (IsPointInCircle(mousePosition, component.points[i], 5)) {
@@ -315,21 +321,30 @@ void DrawBoard::OnLeftClick(wxMouseEvent& event) {
             }
             //点在内部空白
             if (!component.draggingTab) {
-                if (component.PointInside(mousePosition)) {
-                    if (component.connectingPin1 = true) {
-                        if (isConnecting = false) {
-                            isConnecting = true;
-                            connectStartPoint = component.pin1;
-                        }
-                        else {
-                            isConnecting = false;
-                            
-                        }
+                if (!isConnecting) {
+                    //元器件连接状态
+                    if (IsPointInCircle(mousePosition, component.pin1, 5)) {
+                        isConnecting = true;
+                        connectStartPoint =  component.pin1;
                     }
-                    component.movingTab = true;
-                    XYoffset = wxPoint(mousePosition.x - component.center.x, mousePosition.y - component.center.y);
                 }
+                else {
+                    if (IsPointInCircle(mousePosition, component.pin1, 5)) {
+                        isConnecting = false;
+                        electronicLines.push_back(std::make_pair(connectStartPoint, component.pin1));
+                        connectStartPoint = wxPoint(-1, -1);
+                    }
+                    else if (index == Components.size() - 1) {
+                        isConnecting = false;
+                        connectStartPoint = wxPoint(-1, -1);
+                    }
+                }
+                component.movingTab = true;
+                XYoffset = wxPoint(mousePosition.x - component.center.x, mousePosition.y - component.center.y);
             }
+        }
+        else {
+            component.showPoints = false;
         }
     }
     
@@ -498,6 +513,11 @@ wxPoint mapToGirdWithInterpolation(int x, int y, int GRID_SIZE) {
     return wxPoint(std::round(gridX), static_cast<int>(std::round(gridY)));
 }
 
+//判断该点是否是障碍物
+bool isPointInObstacle(Node* node, const std::vector<std::vector<bool>>& grid) {
+    return !grid[node->x][node->y]; 
+}
+
 //获取邻居节点
 std::vector<Node*> getNeighbors(Node* node, const std::vector<std::vector<bool>> grid) {
     std::vector<Node*> neighbors;
@@ -512,6 +532,9 @@ std::vector<Node*> getNeighbors(Node* node, const std::vector<std::vector<bool>>
 }
 
 std::vector<Node*> A_star(Node* start, Node* goal, std::vector<std::vector<bool>>grid) {
+    auto startTime = std::chrono::steady_clock::now();
+    const int TIME_LIMIT_MS = 500; // 设置最大运行时间为 500 毫秒
+
     std::priority_queue<Node*, std::vector<Node*>, compareNode> openSet;//开放列表
     std::unordered_set<Node*> openSetSet;//辅助开放列表
     std::unordered_set<Node*> closeSet;//关闭列表
@@ -520,6 +543,7 @@ std::vector<Node*> A_star(Node* start, Node* goal, std::vector<std::vector<bool>
     start->f = start->g + start->h;
     openSet.push(start);
     openSetSet.insert(start);
+    std::chrono::steady_clock::time_point lastCalculationTime;
 
     while (!openSet.empty()) {
         Node* current = openSet.top();
@@ -569,6 +593,7 @@ std::vector<Node*> A_star(Node* start, Node* goal, std::vector<std::vector<bool>
 #pragma endregion
 
 
+
 void DrawBoard::SearchPath(wxPoint startPoint, wxPoint endPoint, wxMemoryDC& memDC) {
     wxGraphicsContext* gc = wxGraphicsContext::Create(memDC);
     gc->SetPen(wxPen(wxColour(0, 0, 255), 3));
@@ -609,18 +634,18 @@ void DrawBoard::SearchPath(wxPoint startPoint, wxPoint endPoint, wxMemoryDC& mem
         }
         //发生碰撞
         else {
-            const int GRID_SIZE = 20;
+            const int GRID_SIZE = 10;
             const int WIDTH = 1500;
             const int HEIGHT = 800;
 
             int cols = WIDTH / GRID_SIZE;
             int rows = HEIGHT / GRID_SIZE;
-            startPoint = mapToGirdWithInterpolation(startPoint.x, startPoint.y, 20);
-            endPoint = mapToGirdWithInterpolation(endPoint.x, endPoint.y, 20);
+            startPoint = mapToGirdWithInterpolation(startPoint.x, startPoint.y, GRID_SIZE);
+            endPoint = mapToGirdWithInterpolation(endPoint.x, endPoint.y, GRID_SIZE);
             Node* start = new Node(startPoint.x, startPoint.y);
             Node* goal = new Node(endPoint.x, endPoint.y);
-
             std::vector<std::vector<bool>> grid(rows, std::vector<bool>(cols, 1));//图
+            if (isPointInObstacle(start, grid) || isPointInObstacle(goal, grid)) return;
             for (const auto& barrier : barrierStorage) {
                 int startX = barrier.leftUpNode.x / GRID_SIZE;
                 int startY = barrier.leftUpNode.y / GRID_SIZE;
@@ -637,7 +662,7 @@ void DrawBoard::SearchPath(wxPoint startPoint, wxPoint endPoint, wxMemoryDC& mem
             wxGraphicsPath path = gc->CreatePath();
             path.MoveToPoint(start->x * GRID_SIZE, start->y * GRID_SIZE);
             for (const auto& node : nodePath) {
-                path.AddLineToPoint(node->y * GRID_SIZE, node->x * GRID_SIZE);
+                path.AddLineToPoint(node->x * GRID_SIZE, node->y * GRID_SIZE);
             }
             gc->StrokePath(path);
 
@@ -682,7 +707,3 @@ bool DrawBoard::isSegmentIntersectRectangle(const wxPoint& p1, const wxPoint& p2
     return false;
 }
 #pragma endregion
-
-
-
-
