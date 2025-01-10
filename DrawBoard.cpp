@@ -5,27 +5,18 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <chrono>
-#pragma region 绑定
+
 wxBEGIN_EVENT_TABLE(DrawBoard, wxPanel)
 EVT_PAINT(DrawBoard::OnPaint)
 EVT_LEFT_DOWN(DrawBoard::OnLeftClick)
+EVT_LEFT_DCLICK(DrawBoard::OnLeftDoubleClick)
 EVT_LEFT_UP(DrawBoard::OnLeftUp)
 EVT_RIGHT_DOWN(DrawBoard::OnRightClick)
 EVT_MOTION(DrawBoard::OnMouseMove)
-EVT_KEY_DOWN(DrawBoard::OnKeyDown)
-EVT_KEY_UP(DrawBoard::OnKeyUp)
 wxEND_EVENT_TABLE()
-#pragma endregion
-#pragma region 构造函数及初始化
+
 DrawBoard::DrawBoard(wxFrame* parent) : wxPanel(parent)
 {
-    //全局键盘监听事件
-    this->Bind(wxEVT_CHAR_HOOK, &DrawBoard::OnKeyDown, this);
-    //电路元器件
-    wxPoint ppp = wxPoint(100, 100);
-
-
-
     //归位
     isShiftPressed = false;
     isLineDrawing = false;
@@ -37,11 +28,10 @@ DrawBoard::DrawBoard(wxFrame* parent) : wxPanel(parent)
 }
 
 DrawBoard::~DrawBoard() { }
-#pragma endregion
 
 void DrawBoard::OnPaint(wxPaintEvent& event) {
-#pragma region 创建画板
     wxAutoBufferedPaintDC dc(this);
+    dc.SetUserScale(scale, scale);
     dc.SetBackground(*wxWHITE_BRUSH);
     dc.Clear();
 
@@ -50,32 +40,78 @@ void DrawBoard::OnPaint(wxPaintEvent& event) {
     memDC.SelectObject(bufferBitmap);
     memDC.SetBackground(*wxWHITE_BRUSH);
     memDC.Clear();
-#pragma endregion
-    if (isConnecting) {
-        SearchPath(connectStartPoint, connectEndPoint, memDC);
-    }
+    
     //元器件绘制
     for (auto& component : Components) {
         component.Show(memDC);
-        
     }
-    
+    for (auto& textBox : textBoxes) {
+        textBox.Draw(memDC);
+        textBox.AutoWrapText(memDC);
+        int y = 0;
+        wxString line;
+        wxStringTokenizer tokenizer(textBox.wrappedText, "\n");
+        while (tokenizer.HasMoreTokens()) {
+            line = tokenizer.GetNextToken();
+            dc.DrawText(line, 0, y);
+            y += dc.GetTextExtent(line).y;  // 每行的高度增加
+        }
+
+        if (textBox.isDrawn) {
+            textBox.DrawResizeBox(memDC);
+        }
+    }
     wxGraphicsContext* gc = wxGraphicsContext::Create(memDC);
     if (gc) {
-#pragma region 前置操作
         gc->SetAntialiasMode(wxANTIALIAS_DEFAULT);
         gc->SetInterpolationQuality(wxINTERPOLATION_DEFAULT);
         DrawGrid(gc, 20);
-        DrawHorizontalAndVerticalLines(gc);
-#pragma endregion
+        //DrawHorizontalAndVerticalLines(gc);
 
-#pragma region 显示可交互点
         for (const auto& component : Components) {
             if (component.showPoints) {
                 gc->SetPen(wxPen(wxColour(0, 0, 0), 1));
                 for (int j = 0; j < 4; j++) {
                     gc->DrawEllipse(component.points[j].x - 5, component.points[j].y - 5, 10, 10);
                 }
+                wxPoint p1(component.closePoint.x - 5, component.closePoint.y - 5);  // 左上角
+                wxPoint p2(component.closePoint.x + 5, component.closePoint.y + 5);  // 右下角
+                wxPoint p3(component.closePoint.x + 5, component.closePoint.y - 5);  // 右上角
+                wxPoint p4(component.closePoint.x - 5, component.closePoint.y + 5);  // 左下角
+                gc->DrawEllipse(component.closePoint.x - 5 * sqrt(2), component.closePoint.y - 5 * sqrt(2), 10 * sqrt(2), 10 * sqrt(2));
+                gc->StrokeLine(p1.x, p1.y, p2.x, p2.y);
+                gc->StrokeLine(p3.x, p3.y, p4.x, p4.y);
+
+                double radius = 10 * component.scale;
+                double arrowSize = 5 * component.scale;
+
+                double arrowAngle = component.rotationAngle + M_PI;
+                wxPoint arrowTip(
+                    component.rotationCenter.x + radius * std::cos(arrowAngle),
+                    component.rotationCenter.y + radius * std::sin(arrowAngle)
+                );
+
+                wxPoint arrowLeft(
+                    arrowTip.x + arrowSize * std::cos(arrowAngle + 11 * M_PI / 24),
+                    arrowTip.y + arrowSize * std::sin(arrowAngle + 11 * M_PI / 24)
+                );
+                wxPoint arrowRight(
+                    arrowTip.x + arrowSize * std::cos(arrowAngle - 5 * M_PI / 4),
+                    arrowTip.y + arrowSize * std::sin(arrowAngle - 5 * M_PI / 4)
+                );
+
+                gc->SetPen(wxPen(wxColour(0, 0, 0), 2));
+                wxGraphicsPath arcPath = gc->CreatePath();
+                arcPath.AddArc(component.rotationCenter.x, component.rotationCenter.y, radius, component.rotationAngle, component.rotationAngle + M_PI, false);
+                gc->StrokePath(arcPath);
+
+                gc->SetPen(wxPen(wxColour(0, 0, 0), 2));
+                wxGraphicsPath arrowPath = gc->CreatePath();
+                arrowPath.MoveToPoint(arrowLeft.x, arrowLeft.y);
+                arrowPath.AddLineToPoint(arrowTip.x, arrowTip.y);
+                arrowPath.MoveToPoint(arrowRight.x, arrowRight.y);
+                arrowPath.AddLineToPoint(arrowTip.x, arrowTip.y);
+                gc->StrokePath(arrowPath);
             }
             gc->SetPen(wxPen(wxColour(0, 0, 255), 3));
             if (component.connectingPin1) {
@@ -88,16 +124,10 @@ void DrawBoard::OnPaint(wxPaintEvent& event) {
                 gc->DrawEllipse(component.pout.x - 5, component.pout.y - 5, 10, 10);
             }
         }
-#pragma endregion
 
-        gc->SetPen(wxPen(wxColour(0, 0, 0), 1));
+        gc->SetPen(wxPen(wxColour(0, 0, 0), 3));
         gc->SetBrush(*wxTRANSPARENT_BRUSH);
 
-        for (const auto& line : electronicLines) {
-            SearchPath(line.first, line.second, memDC);
-        }
-
-#pragma region 线绘制
         if (isLineDrawing && firstPointSet) {
             gc->SetPen(wxPen(wxColour(0, 0, 255), 1));
             gc->StrokeLine(startPoint.x, startPoint.y, endPoint.x, endPoint.y);
@@ -107,6 +137,19 @@ void DrawBoard::OnPaint(wxPaintEvent& event) {
                 gc->StrokeLine(freeDrawPoints[i - 1].x, freeDrawPoints[i - 1].y, freeDrawPoints[i].x, freeDrawPoints[i].y);
             }
         }
+        if (!connectPoints.empty()) {
+            for (size_t i = 1; i < connectPoints.size(); ++i) {
+                wxPoint p1 = connectPoints[i - 1];
+                wxPoint p2 = connectPoints[i];
+                gc->StrokeLine(p1.x, p1.y, p2.x, p1.y);
+                gc->StrokeLine(p2.x, p1.y, p2.x, p2.y);
+            }
+            wxPoint p1 = connectPoints[connectPoints.size() - 1];
+            wxPoint p2 = connectTempPoint;
+            gc->StrokeLine(p1.x, p1.y, p2.x, p1.y);
+            gc->StrokeLine(p2.x, p1.y, p2.x, p2.y);
+        }
+
         for (const auto& line : lines) {
             gc->StrokeLine(line.first.x, line.first.y, line.second.x, line.second.y);
         }
@@ -138,13 +181,20 @@ void DrawBoard::OnPaint(wxPaintEvent& event) {
                 DrawCubicBezier(gc, false, curve.controlPoints[0], curve.controlPoints[1], curve.controlPoints[2], curve.controlPoints[3]);
             }
         }
-#pragma endregion
+        for (const auto& path : connectPaths) {
+            for (size_t i = 1; i < path.size(); ++i) {
+                wxPoint p1 = path[i - 1];
+                wxPoint p2 = path[i];
+                gc->StrokeLine(p1.x, p1.y, p2.x, p1.y);
+                gc->StrokeLine(p2.x, p1.y, p2.x, p2.y);
+            }
+        }
+        
         delete gc;
     }
     dc.Blit(0, 0, GetClientSize().GetWidth(), GetClientSize().GetHeight(), &memDC, 0, 0);
 }
 
-#pragma region 方格和线绘制函数
 //绘制方格函数
 void DrawBoard::DrawGrid(wxGraphicsContext* gc, int gridSize) {
     wxSize size = GetSize();
@@ -180,7 +230,7 @@ void DrawBoard::SnapToGrid(const wxPoint& pos, int gridSize) {
     SetCursorPos(screenPoint.x, screenPoint.y);
 }
 
-//线绘制函数
+//线绘制工具函数
 void DrawBoard::DrawHorizontalAndVerticalLines(wxGraphicsContext* gc) {
     if (mousePos.x >= 0 && mousePos.y >= 0) {
         gc->SetPen(wxPen(wxColour(0, 0, 0), 2));
@@ -214,18 +264,15 @@ void DrawBoard::DrawCubicBezier(wxGraphicsContext* gc, bool isWithLine, const wx
 
     gc->StrokePath(path);
 }
-#pragma endregion
 
 
 //鼠标移动事件
 void DrawBoard::OnMouseMove(wxMouseEvent& event) {
     //获取光标位置
     mousePos = event.GetPosition();
-#pragma region 显示鼠标位置
     wxString msg;
     msg.Printf(wxT("X:%d, Y:%d"), event.GetX(), event.GetY());
     mousePositionText->SetValue(msg);
-#pragma endregion
 
 #pragma region 格单位移动状态（暂定）
     if (isShiftPressed) {
@@ -269,7 +316,12 @@ void DrawBoard::OnMouseMove(wxMouseEvent& event) {
         else {
             component.connectingPin1 = component.connectingPin2 = component.connectingPout = false;
         }
-
+        if (component.isRotating) {
+            RotateVector = wxPoint(mousePos.x - component.rotationCenter.x, mousePos.y - component.rotationCenter.y);
+            double currentAngle = std::atan2(RotateVector.y, RotateVector.x); // 当前角度
+            component.rotationAngle += currentAngle - initialAngle; // 更新旋转角度
+            initialAngle = currentAngle; // 更新初始角度
+        }
         if (component.draggingTab && event.LeftIsDown()) {
             double targetScale = sqrt(pow(mousePos.x - component.center.x, 2) + pow(mousePos.y - component.center.y, 2))
                 / sqrt(pow(component.points[component.pointIndex].x - component.center.x, 2) + pow(component.points[component.pointIndex].y - component.center.y, 2));
@@ -282,13 +334,43 @@ void DrawBoard::OnMouseMove(wxMouseEvent& event) {
         else if (component.movingTab && event.LeftIsDown()) {
             component.center = mousePos - XYoffset;
         }
-    }
 
+        connectTempPoint = mousePos;
+    }
+    if (draggingTextBox) {
+        wxPoint mousePos = event.GetPosition();
+        draggingTextBox->position = mousePos - Textoffset;
+        Refresh();
+    }
+    if (event.Dragging()) {
+        wxPoint mousePos = event.GetPosition();
+        for (auto& textBox : textBoxes) {
+            if (textBox.resizing) {
+                // 计算鼠标拖动的距离
+                int dx = mousePos.x - textBox.dragStart.x;
+                int dy = mousePos.y - textBox.dragStart.y;
+
+                // 更新文本框的宽度和高度
+                textBox.size.x += dx;
+                textBox.size.y += dy;
+
+                // 更新拖动起始位置
+                textBox.dragStart = mousePos;
+
+                // 限制最小尺寸
+                if (textBox.size.x < 50) textBox.size.x = 50;
+                if (textBox.size.y < 20) textBox.size.y = 20;
+
+                // 刷新画板，重新绘制文本框
+                Refresh();
+                break;
+            }
+        }
+    }
     //元器件连接状态
     if (isConnecting) {
         connectEndPoint = mousePos;
     }
-#pragma region 线绘制
     if (isLineDrawing && firstPointSet) {
         endPoint = mousePos;
     }
@@ -299,56 +381,13 @@ void DrawBoard::OnMouseMove(wxMouseEvent& event) {
         //用虚线表示曲线
         tempPoint = mousePos;
     }
-#pragma endregion
-
     Refresh();
 }
 
 //鼠标点击左键事件
 void DrawBoard::OnLeftClick(wxMouseEvent& event) {
     wxPoint mousePosition = event.GetPosition();
-    
-    for (auto& component : Components) {
-        size_t index = 0;
-        if (component.PointInside(mousePosition)) {
-            component.showPoints = true;
-            //点在四周圈内
-            for (int i = 0; i < 4; i++) {
-                if (IsPointInCircle(mousePosition, component.points[i], 5)) {
-                    component.pointIndex = i;
-                    component.draggingTab = true;
-                }
-            }
-            //点在内部空白
-            if (!component.draggingTab) {
-                if (!isConnecting) {
-                    //元器件连接状态
-                    if (IsPointInCircle(mousePosition, component.pin1, 5)) {
-                        isConnecting = true;
-                        connectStartPoint =  component.pin1;
-                    }
-                }
-                else {
-                    if (IsPointInCircle(mousePosition, component.pin1, 5)) {
-                        isConnecting = false;
-                        electronicLines.push_back(std::make_pair(connectStartPoint, component.pin1));
-                        connectStartPoint = wxPoint(-1, -1);
-                    }
-                    else if (index == Components.size() - 1) {
-                        isConnecting = false;
-                        connectStartPoint = wxPoint(-1, -1);
-                    }
-                }
-                component.movingTab = true;
-                XYoffset = wxPoint(mousePosition.x - component.center.x, mousePosition.y - component.center.y);
-            }
-        }
-        else {
-            component.showPoints = false;
-        }
-    }
-    
-#pragma region 线绘制状态
+    bool clickedOnTextBox = false;
     if (isLineDrawing) {
         //第一笔未落下----设置首端点
         if (!firstPointSet) {
@@ -361,6 +400,7 @@ void DrawBoard::OnLeftClick(wxMouseEvent& event) {
             endPoint = mousePosition;
             lines.push_back(std::make_pair(startPoint, endPoint));
             firstPointSet = false;//归位
+            isLineDrawing = false;
         }
     }
     if (isFreeDrawing) {
@@ -385,11 +425,125 @@ void DrawBoard::OnLeftClick(wxMouseEvent& event) {
             newCurve.pointCount = 4;
             bezierCurveStorage.push_back(newCurve);
             BezierControlPoints.clear();
+            isBezierDrawing = false;
         }
     }
-#pragma endregion
+    if (isConnecting) {
+        connectPoints.push_back(mousePosition);
+        connectTempPoint = mousePosition;
+    }
 
-#pragma region 元器件布局状态
+    for (auto& component : Components) {
+        size_t index = 0;
+
+        //点在删除按钮，删除元器件
+        if (IsPointInCircle(mousePosition, component.closePoint, 5 * sqrt(2))) {
+            auto it = Components.begin();
+            while (it != Components.end()) {
+                if (it->showPoints) {
+                    for (auto it2 = connectPaths.begin(); it2 != connectPaths.end();) {
+                        auto& firstNode = it2->front();
+                        auto& lastNode = it2->back();
+
+                        if (firstNode == it->pin1 || firstNode == it->pin2 || firstNode == it->pout ||
+                            lastNode == it->pin1 || lastNode == it->pin2 || lastNode == it->pout) {
+                            it2 = connectPaths.erase(it2);
+                        }
+                        else {
+                            ++it2;
+                        }
+                    }
+                    it = Components.erase(it);
+                    break;
+                }
+                else {
+                    ++it;                }
+            }
+        }
+        if (component.PointInside(mousePosition)) {
+            component.showPoints = true;
+            //点在四周圈内，缩放
+            for (int i = 0; i < 4; i++) {
+                if (IsPointInCircle(mousePosition, component.points[i], 5)) {
+                    component.pointIndex = i;
+                    component.draggingTab = true;
+                }
+            }
+            //点在内部空白，移动 或 连线
+            if (!component.draggingTab) {
+                if (!isConnecting) {
+                    //元器件连接开始
+                    if (IsPointInCircle(mousePosition, component.pin1, 5)) {
+                        isConnecting = true;
+                        connectPoints.push_back(component.pin1);
+                    }
+                    else if (IsPointInCircle(mousePosition, component.pin2, 5)) {
+                        isConnecting = true;
+                        connectPoints.push_back(component.pin2);
+                    }
+                    else if (IsPointInCircle(mousePosition, component.pout, 5)) {
+                        isConnecting = true;
+                        connectPoints.push_back(component.pout);
+                    }
+                }
+                else {
+                    //元器件连接结束
+                    if (IsPointInCircle(connectPoints.back(), component.pin1, 5)) {
+                        isConnecting = false;
+                        connectPoints.back() = component.pin1;
+                        connectPaths.push_back(connectPoints);
+                        connectPoints.clear();
+                    }
+                    else if (IsPointInCircle(connectPoints.back(), component.pin2, 5)) {
+                        isConnecting = false;
+                        connectPoints.back() = component.pin2;
+                        connectPaths.push_back(connectPoints);
+                        connectPoints.clear();
+                    }
+                    else if (IsPointInCircle(connectPoints.back(), component.pout, 5)) {
+                        isConnecting = false;
+                        connectPoints.back() = component.pout;
+                        connectPaths.push_back(connectPoints);
+                        connectPoints.clear();
+                    }
+                }
+                component.movingTab = true;
+                XYoffset = wxPoint(mousePosition.x - component.center.x, mousePosition.y - component.center.y);
+            }
+        }
+        else {
+            component.showPoints = false;
+        }
+        if (IsPointInCircle(mousePosition, component.rotationCenter, 10 * component.scale)) {
+            RotateVector = wxPoint(mousePos.x - component.rotationCenter.x, mousePos.y - component.rotationCenter.y);
+            initialAngle = std::atan2(RotateVector.y, RotateVector.x); // 初始角度
+            component.isRotating = true; // 标记正在旋转
+            component.showPoints = true;
+        }
+    }
+    for (auto& textBox : textBoxes) {
+        if (IsPointInTextBox(mousePos, textBox) && !clickedOnTextBox) {
+            textBox.isDrawn = true;
+            clickedOnTextBox = true;
+        }
+        else {
+            textBox.isDrawn = false;
+        }
+        if (textBox.isDrawn) {
+            //拖动
+            if (IsPointInTextBox(mousePos, textBox) && !textBox.IsMouseOnResizeCorner(mousePos)) {
+                draggingTextBox = &textBox;
+                Textoffset = mousePos - textBox.position;
+            }
+            //缩放
+            if (textBox.IsMouseOnResizeCorner(mousePos)) {
+                textBox.resizing = true;
+                textBox.dragStart = mousePos;
+                CaptureMouse();
+                break;
+            }
+        }
+    }
     if (placingAndGate || placingOrGate || placingNotGate) {
         if (placingAndGate) {
             Component newComponent = Component(mousePos, ANDGate);
@@ -409,12 +563,44 @@ void DrawBoard::OnLeftClick(wxMouseEvent& event) {
         placingOrGate = false;
         placingNotGate = false;
     }
-#pragma endregion
+    if (placingTextBox) {
+        TextBox newTextBox(mousePosition, "新文本");
+        textBoxes.push_back(newTextBox);
+        placingTextBox = false;
+    }
     
+
     Refresh();
 }
 
-#pragma region 无关事件
+//鼠标双击左键事件
+void DrawBoard::OnLeftDoubleClick(wxMouseEvent& event) {
+    wxPoint mousePos = event.GetPosition();
+
+    for (auto& textBox : textBoxes) {
+        if (IsPointInTextBox(mousePos, textBox)) {
+            wxDialog dialog(this, wxID_ANY, "修改文本和字体大小");
+
+            wxTextCtrl* textInput = new wxTextCtrl(&dialog, wxID_ANY, textBox.text, wxPoint(10, 10), wxSize(200, 50), wxTE_MULTILINE);
+            wxTextCtrl* sizeInput = new wxTextCtrl(&dialog, wxID_ANY, std::to_string(textBox.font.GetPointSize()), wxPoint(10, 70), wxSize(100, 30));
+            wxButton* okButton = new wxButton(&dialog, wxID_OK, "确认", wxPoint(10, 110));
+            dialog.SetSize(wxSize(230, 200));
+
+            if (dialog.ShowModal() == wxID_OK) {
+                wxString newText = textInput->GetValue();
+                long newSize;
+                if (sizeInput->GetValue().ToLong(&newSize)) {
+                    textBox.SetText(newText);
+
+                    wxFont newFont = textBox.font;
+                    newFont.SetPointSize(static_cast<int>(newSize));
+                    textBox.SetFont(newFont);
+                }
+            }
+        }
+    }
+}
+
 //鼠标抬起左键事件
 void DrawBoard::OnLeftUp(wxMouseEvent& event) {
     for (auto& component : Components) {
@@ -426,14 +612,29 @@ void DrawBoard::OnLeftUp(wxMouseEvent& event) {
             component.movingTab = false;
             break;
         }
+        component.isRotating = false; // 停止旋转
     }
+
+    draggingTextBox = nullptr;
+
+    for (auto& textBox : textBoxes) {
+        if (textBox.resizing) {
+            textBox.resizing = false;
+            ReleaseMouse();  // 释放鼠标捕获
+            break;
+        }
+    }
+
 }
 
 //鼠标点击右键事件
 void DrawBoard::OnRightClick(wxMouseEvent& event) {
+    wxPoint mousePosition = event.GetPosition();
+
     if (isBezierDrawing) {
         if (BezierControlPoints.size() < 3) {
             BezierControlPoints.clear();
+            isBezierDrawing = false;
         }
         else if (BezierControlPoints.size() == 3) {
             BezierCurve newCurve;
@@ -441,269 +642,27 @@ void DrawBoard::OnRightClick(wxMouseEvent& event) {
             newCurve.pointCount = 3;
             bezierCurveStorage.push_back(newCurve);
             BezierControlPoints.clear();
+            isBezierDrawing = false;
         }
     }
 
-    Refresh();
-}
-
-//键盘按下检测
-void DrawBoard::OnKeyDown(wxKeyEvent& event) {
-    //Shift对焦方格
-    if (event.GetKeyCode() == WXK_SHIFT) {
-        isShiftPressed = true;
-        wxPoint mousePos = wxGetMousePosition();
-        SnapToGrid(mousePos, 20);
-        lastMousePos = mousePos;
-    }
-    //BackSpace删除元器件
-    if (event.GetKeyCode() == WXK_BACK) {
-        for (auto it = Components.begin(); it != Components.end(); ++it) {
-            if (it->showPoints) {
-                it = Components.erase(it);
-                break;
-            }
-        }
+    if (isConnecting) {
+        isConnecting = false;
+        connectPoints.push_back(mousePos);
+        connectPaths.push_back(connectPoints);
+        connectPoints.clear();
     }
 
     Refresh();
 }
 
-//键盘松开检测
-void DrawBoard::OnKeyUp(wxKeyEvent& event) {
-    //Shift松开停止方格对齐
-    if (event.GetKeyCode() == WXK_SHIFT) {
-        isShiftPressed = false;
-    }
-
-    Refresh();
-}
-#pragma endregion
 
 //点是否在圆范围内
 bool DrawBoard::IsPointInCircle(const wxPoint& mousePos, const wxPoint& circlePos, int radius) {
     int distance = pow(mousePos.x - circlePos.x, 2) + pow(mousePos.y - circlePos.y, 2);
     return distance <= radius * radius;
 }
-
-//A*算法寻路
-struct Node {
-    int x, y;
-    float g, h, f;
-    Node* parent;
-    Node(int _x, int _y) :x(_x), y(_y), g(0), h(0), f(0), parent(nullptr) {}
-};
-
-struct compareNode {
-    bool operator()(Node* a, Node* b) {
-        return a->f > b->f;
-    }
-};
-
-#pragma region A*算法有关函数
-//返回曼哈顿距离
-float heuristic(Node* a, Node* b) {
-    return pow((a->x - b->x), 2) + pow((a->y - b->y), 2);
+bool DrawBoard::IsPointInTextBox(wxPoint mousePos, TextBox textBox) {
+    wxRect rect(textBox.position, textBox.size);
+    return rect.Contains(mousePos);
 }
-
-//插值映射网格点
-wxPoint mapToGirdWithInterpolation(int x, int y, int GRID_SIZE) {
-    double gridX = static_cast<double>(x) / GRID_SIZE;
-    double gridY = static_cast<double>(y) / GRID_SIZE;
-    return wxPoint(std::round(gridX), static_cast<int>(std::round(gridY)));
-}
-
-//判断该点是否是障碍物
-bool isPointInObstacle(Node* node, const std::vector<std::vector<bool>>& grid) {
-    return !grid[node->x][node->y]; 
-}
-
-//获取邻居节点
-std::vector<Node*> getNeighbors(Node* node, const std::vector<std::vector<bool>> grid) {
-    std::vector<Node*> neighbors;
-    int directions[4][2] = { {0, 1}, {1, 0}, {0, -1}, {-1, 0} };
-    for (auto& dir : directions) {
-        int nx = node->x + dir[0], ny = node->y + dir[1];
-        if (nx >= 0 && ny >= 0 && nx < grid.size() && ny < grid[0].size() && grid[nx][ny]) {
-            neighbors.push_back(new Node(nx, ny));
-        }
-    }
-    return neighbors;
-}
-
-std::vector<Node*> A_star(Node* start, Node* goal, std::vector<std::vector<bool>>grid) {
-    auto startTime = std::chrono::steady_clock::now();
-    const int TIME_LIMIT_MS = 500; // 设置最大运行时间为 500 毫秒
-
-    std::priority_queue<Node*, std::vector<Node*>, compareNode> openSet;//开放列表
-    std::unordered_set<Node*> openSetSet;//辅助开放列表
-    std::unordered_set<Node*> closeSet;//关闭列表
-    start->g = 0;
-    start->h = heuristic(start, goal);
-    start->f = start->g + start->h;
-    openSet.push(start);
-    openSetSet.insert(start);
-    std::chrono::steady_clock::time_point lastCalculationTime;
-
-    while (!openSet.empty()) {
-        Node* current = openSet.top();
-        openSet.pop();
-        openSetSet.erase(current);
-        closeSet.insert(current);
-
-        //已经到达终点
-        if (current->x == goal->x && current->y == goal->y) {
-            std::vector<Node*>path;
-            while (current) {
-                path.push_back(current);
-                current = current->parent;
-            }
-            reverse(path.begin(), path.end());
-            return path;
-        }
-
-        for (auto& neighbor : getNeighbors(current, grid)) {
-            if (closeSet.find(neighbor) != closeSet.end()) {
-                continue;
-            }
-
-            int tentative_g = current->g + 1;
-
-            if (openSetSet.find(neighbor) == openSetSet.end() && grid[neighbor->x][neighbor->y]) {
-                neighbor->g = tentative_g;
-                neighbor->h = heuristic(neighbor, goal);
-                neighbor->f = neighbor->g + neighbor->h;
-
-                neighbor->parent = current;
-                openSet.push(neighbor);
-                openSetSet.insert(neighbor);
-            }
-            
-            else if (tentative_g < neighbor->g && grid[neighbor->x][neighbor->y]) {
-                neighbor->g = tentative_g;
-                neighbor->f = neighbor->g + neighbor->h;
-                neighbor->parent = current;
-            }
-        }
-    }
-
-    return{};//没有路径
-}
-
-#pragma endregion
-
-
-
-void DrawBoard::SearchPath(wxPoint startPoint, wxPoint endPoint, wxMemoryDC& memDC) {
-    wxGraphicsContext* gc = wxGraphicsContext::Create(memDC);
-    gc->SetPen(wxPen(wxColour(0, 0, 255), 3));
-    if (gc) {
-        barrierStorage.clear();
-        bool isCollipse = false;
-        //存元器件
-        for (auto& component : Components) {
-            Barrier barrier = {
-                component.points[0] + wxPoint(-5, -5),
-                component.points[1] + wxPoint(-5, +5),
-                component.points[2] + wxPoint(+5, -5),
-                component.points[3] + wxPoint(+5, +5)
-            };
-            barrierStorage.push_back(barrier);
-        }
-        //第一个转折点
-        wxPoint turnOffPoint = wxPoint((startPoint.x + endPoint.x) / 2, startPoint.y);
-        //第二个转折点
-        wxPoint turnBackPoint = wxPoint((startPoint.x + endPoint.x) / 2, endPoint.y);
-        //检测是否碰撞
-        for (auto& rectangle : barrierStorage) {
-            //此时有三条线段 startPoint->turnOffPoint, turnOffPoint->turnBackPoint, turnBackPoint->endPoint，任何一条线段碰上都会造成线段路径修改
-            if (isSegmentIntersectRectangle(startPoint, turnOffPoint, rectangle) ||
-                isSegmentIntersectRectangle(turnOffPoint, turnBackPoint, rectangle) ||
-                isSegmentIntersectRectangle(turnBackPoint, endPoint, rectangle)) {
-                isCollipse = true;
-            }
-        }
-        //未发生碰撞
-        if (!isCollipse) {
-            wxGraphicsPath path = gc->CreatePath();
-            path.MoveToPoint(startPoint);
-            path.AddLineToPoint(turnOffPoint);
-            path.AddLineToPoint(turnBackPoint);
-            path.AddLineToPoint(endPoint);
-            gc->StrokePath(path);
-        }
-        //发生碰撞
-        else {
-            const int GRID_SIZE = 10;
-            const int WIDTH = 1500;
-            const int HEIGHT = 800;
-
-            int cols = WIDTH / GRID_SIZE;
-            int rows = HEIGHT / GRID_SIZE;
-            startPoint = mapToGirdWithInterpolation(startPoint.x, startPoint.y, GRID_SIZE);
-            endPoint = mapToGirdWithInterpolation(endPoint.x, endPoint.y, GRID_SIZE);
-            Node* start = new Node(startPoint.x, startPoint.y);
-            Node* goal = new Node(endPoint.x, endPoint.y);
-            std::vector<std::vector<bool>> grid(rows, std::vector<bool>(cols, 1));//图
-            if (isPointInObstacle(start, grid) || isPointInObstacle(goal, grid)) return;
-            for (const auto& barrier : barrierStorage) {
-                int startX = barrier.leftUpNode.x / GRID_SIZE;
-                int startY = barrier.leftUpNode.y / GRID_SIZE;
-                int endX = barrier.rightDownNode.x / GRID_SIZE;
-                int endY = barrier.rightDownNode.y / GRID_SIZE;
-
-                for (int i = startY; i <= endY; i++) {
-                    for (int j = startX; j <= endX; j++) {
-                        grid[i][j] = 0;//0表示障碍物
-                    }
-                }
-            }
-            std::vector<Node*> nodePath = A_star(start, goal, grid);
-            wxGraphicsPath path = gc->CreatePath();
-            path.MoveToPoint(start->x * GRID_SIZE, start->y * GRID_SIZE);
-            for (const auto& node : nodePath) {
-                path.AddLineToPoint(node->x * GRID_SIZE, node->y * GRID_SIZE);
-            }
-            gc->StrokePath(path);
-
-        }
-    }
-    delete gc;
-}
-#pragma region 计算是否与直线相交的函数
-float crossProduct(const wxPoint& p1, const wxPoint& p2, const wxPoint& p3) {
-    return (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
-}
-
-bool isOnSegment(const wxPoint p1, const wxPoint& p2, const wxPoint& q) {
-    return(q.x >= std::min(p1.x, p2.x) && q.x <= std::max(p1.x, p2.x) &&
-        q.y >= std::min(p1.y, p2.y) && q.y <= std::max(p1.y, p2.y));
-}
-
-bool doLinesIntersect(const wxPoint& p1, const wxPoint& p2, const wxPoint& q1, const wxPoint& q2) {
-    float d1 = crossProduct(q1, p1, p2);
-    float d2 = crossProduct(q2, p1, p2);
-    float d3 = crossProduct(p1, q1, q2);
-    float d4 = crossProduct(p2, q1, q2);
-    if (d1 * d2 < 0 && d3 * d4 < 0) {
-        return true;
-    }
-
-    if (d1 == 0 && isOnSegment(p1, p2, q1)) return true;
-    if (d2 == 0 && isOnSegment(p1, p2, q2)) return true;
-    if (d3 == 0 && isOnSegment(q1, q2, p1)) return true;
-    if (d4 == 0 && isOnSegment(q1, q2, p2)) return true;
-
-    return false;
-}
-
-bool DrawBoard::isSegmentIntersectRectangle(const wxPoint& p1, const wxPoint& p2, const Barrier& rectangle) {
-    if (doLinesIntersect(p1, p2, rectangle.leftUpNode, rectangle.leftDownNode) ||
-        doLinesIntersect(p1, p2, rectangle.leftUpNode, rectangle.rightUpNode) ||
-        doLinesIntersect(p1, p2, rectangle.leftDownNode, rectangle.rightDownNode) ||
-        doLinesIntersect(p1, p2, rectangle.rightUpNode, rectangle.rightDownNode)) {
-        return true;
-    }
-    return false;
-}
-#pragma endregion

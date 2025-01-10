@@ -1,6 +1,6 @@
 #pragma once
 #include "ElectronicComponent.h"
-
+#include <list>
 
 class DrawBoard :public wxPanel
 {
@@ -15,13 +15,16 @@ public:
 	bool firstPointSet;//直线绘制第一笔落下状态
 	bool isFreeDrawing;//普通曲线绘制状态
 	bool isBezierDrawing;//贝塞尔曲线绘制状态
-
 	//电路元器件有关
 	bool isConnecting;
 
 	bool placingAndGate;//布置状态
 	bool placingOrGate;
 	bool placingNotGate;
+	bool placingTextBox;
+	double initialAngle;
+
+	float scale = 1.0f;//画布大小比例
 
 	wxPoint XYoffset;
 	wxPoint connectStartPoint;
@@ -31,9 +34,14 @@ public:
 	wxPoint endPoint;//尾端点
 	wxPoint mousePos;//鼠标位置点
 	wxPoint tempPoint;//贝塞尔曲线临时存储点
-
+	wxPoint connectTempPoint;
 	wxTextCtrl* mousePositionText;//光标位置显示文本
 	wxPoint lastMousePos;//上一次的鼠标显示位置
+
+	wxPoint RotateVector;
+	wxPoint Textoffset;
+	TextBox* draggingTextBox;
+
 
 	//存储列表
 	std::vector<std::pair<wxPoint, wxPoint>> lines;//所有直线列表
@@ -47,31 +55,42 @@ public:
 	std::vector<BezierCurve> bezierCurveStorage;//所有贝塞尔曲线列表
 
 	std::vector<Component> Components;//元器件列表
-	
-	struct Barrier {
-		wxPoint leftUpNode;
-		wxPoint leftDownNode;
-		wxPoint rightUpNode;
-		wxPoint rightDownNode;
-	};
-	std::vector<Barrier> barrierStorage;//存储障碍物的列表
-	std::vector<std::pair<wxPoint, wxPoint>> electronicLines;
+	std::vector<wxPoint> connectPoints;//暂存元器件连线列表
+	std::vector<std::vector<wxPoint>> connectPaths;//元器件连线列表
 
+	std::list<TextBox> textBoxes;//文本框列表
 	void OnPaint(wxPaintEvent& event);
 	void DrawGrid(wxGraphicsContext* gc, int gridSize);
 	void DrawHorizontalAndVerticalLines(wxGraphicsContext* gc);
 	void OnMouseMove(wxMouseEvent& event);
 	void OnLeftClick(wxMouseEvent& event);
+	void OnLeftDoubleClick(wxMouseEvent& event);
 	void OnLeftUp(wxMouseEvent& event);
 	void OnRightClick(wxMouseEvent& event);
-	void OnKeyDown(wxKeyEvent& event);
 	void OnKeyUp(wxKeyEvent& event);
 	void DrawQuadraticBezier(wxGraphicsContext* gc,bool isWithLine, const wxPoint p1, const wxPoint p2, const wxPoint p3);
 	void DrawCubicBezier(wxGraphicsContext* gc, bool isWithLine, const wxPoint p1, const wxPoint p2, const wxPoint p3, const wxPoint p4);
 	bool IsPointInCircle(const wxPoint& mousePos, const wxPoint& circlePos, int radius);
+	bool IsPointInTextBox(wxPoint mousePos, TextBox textBox);
 	void SnapToGrid(const wxPoint& pos, int gridSize);
-	bool isSegmentIntersectRectangle(const wxPoint& p1, const wxPoint& p2, const Barrier& rectangle);
-	void SearchPath(wxPoint startPoint, wxPoint endPoint, wxMemoryDC& memDC);
-	
+	void SetScale(float newScale) {
+		if (newScale > 0.1f && newScale <= 10.0f) { // 限制缩放范围
+			scale = newScale;
+			Refresh(); // 重新绘制画布
+		}
+	}
+
+	Component* GetSelectedComponent() {
+		for (auto& component : Components) {
+			if (component.showPoints) {
+				return &component;  // 返回选中的元器件
+			}
+		}
+		return nullptr;  // 如果没有找到，返回 nullptr
+	}
+	std::vector<Component> GetAllComponents() const {
+		return Components;
+	}
+
 	wxDECLARE_EVENT_TABLE();
 };
