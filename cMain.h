@@ -9,24 +9,42 @@ public:
 	~cMain();
 
 public:
-	wxButton* m_btn1 = nullptr;
-	wxButton* m_btn2 = nullptr;
+	wxButton* custom_btn = nullptr;
+	wxButton* none_btn = nullptr;
+	wxButton* Line_btn = nullptr;
+	wxButton* Free_btn = nullptr;
 	wxButton* BezierCurve_btn = nullptr;
 	wxButton* andGate_btn = nullptr;
 	wxButton* orGate_btn = nullptr;
 	wxButton* notGate_btn = nullptr;
 	wxButton* textBox_btn = nullptr;
+	wxButton* resistor_btn = nullptr;
+	wxButton* capacitor_btn = nullptr;
+	wxButton* diode_btn = nullptr;
+	wxButton* power_btn = nullptr;
+	
 	wxButton* fileBtn;
 	wxButton* propertyBtn;
 	wxButton* designBtn;
 	wxButton* windowBtn;
 	wxButton* dataBtn;
 	DrawBoard* drawboard;
+
+	wxBitmap customImage;
+	wxBitmap noneImage;
 	wxBitmap lineImage;
+	wxBitmap freeImage;
+	wxBitmap curveImage;
 	wxBitmap andGateImage;
 	wxBitmap orGateImage;
 	wxBitmap notGateImage;
 	wxBitmap textBoxImage;
+	wxBitmap resistorImage;
+	wxBitmap capacitorImage;
+	wxBitmap diodeImage;
+	wxBitmap powerImage;
+
+
 	wxPanel* propertyPanel;
 	wxBoxSizer* propertySizer;
 
@@ -38,6 +56,7 @@ public:
 	wxTextCtrl* angle;
 
 	wxBitmap CreateImage(wxBitmap image, wxString path);
+	void OnNoneButtonClicked(wxCommandEvent& evt);
 	void OnStraightLineButtonClicked(wxCommandEvent& evt);
 	void OnFreeCurveButtonClicked(wxCommandEvent& event);
 	void OnBezierCurveButtonClicked(wxCommandEvent& event);
@@ -50,10 +69,15 @@ public:
 	void OnPropertyButtonClicked(wxCommandEvent& event);
 	void OnWindowButtonClicked(wxCommandEvent& event);
 	void OnDataButtonClicked(wxCommandEvent& event);
+	void OnCustomComponentButtonClicked(wxCommandEvent& event);
+	
 
 	void OnTimer(wxTimerEvent& event);
 	void UpdatePropertyPanel();
-
+	void OnResistorButtonClicked(wxCommandEvent& event);
+	void OnCapacitorButtonClicked(wxCommandEvent& event);
+	void OnDiodeButtonClicked(wxCommandEvent& event);
+	void OnPowerButtonClicked(wxCommandEvent& event);
 private:
 	wxTimer* refreshTimer;  // 定时器
 	wxDECLARE_EVENT_TABLE();
@@ -134,7 +158,86 @@ private:
 		case ANDGate: return "与门";
 		case ORGate: return "或门";
 		case NOTGate: return "非门";
+		case Resistor: return "电阻";
+		case Capacitor: return "电容";
+		case Diode: return "二极管";
+		case Power: return "电流源";
 		default: return "未知";
 		}
 	}
+};
+
+class CustomComponentEditor : public wxDialog {
+public:
+	CustomComponentEditor(wxWindow* parent)
+		: wxDialog(parent, wxID_ANY, "自定义元器件", wxDefaultPosition, wxSize(500, 500)) {
+		wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
+		wxBoxSizer* topSizer = new wxBoxSizer(wxHORIZONTAL);
+		customDrawBoard = new CustomDrawBoard(this);
+		customDrawBoard->SetMinSize(wxSize(400, 400));
+		topSizer->Add(customDrawBoard, 1, wxALL | wxALIGN_CENTER, 10);
+
+		// 右侧工具按钮区域
+		wxBoxSizer* toolSizer = new wxBoxSizer(wxVERTICAL);
+		wxButton* lineToolButton = new wxButton(this, wxID_ANY, "直线工具");
+		wxButton* bezierToolButton = new wxButton(this, wxID_ANY, "曲线工具");
+		wxButton* triangleToolButton = new wxButton(this, wxID_ANY, "三角形工具");
+		wxButton* rectangleToolButton = new wxButton(this, wxID_ANY, "矩形工具");
+		wxButton* circleToolButton = new wxButton(this, wxID_ANY, "圆形工具");
+		wxButton* pinToolButton = new wxButton(this, wxID_ANY, "引脚工具");
+		toolSizer->Add(lineToolButton, 0, wxALL | wxEXPAND, 5);
+		toolSizer->Add(bezierToolButton, 0, wxALL | wxEXPAND, 5);
+		toolSizer->Add(triangleToolButton, 0, wxALL | wxEXPAND, 5);
+		toolSizer->Add(rectangleToolButton, 0, wxALL | wxEXPAND, 5);
+		toolSizer->Add(circleToolButton, 0, wxALL | wxEXPAND, 5);
+		toolSizer->Add(pinToolButton, 0, wxALL | wxEXPAND, 5);
+
+		// 将工具按钮区添加到主布局
+		topSizer->Add(toolSizer, 0, wxALL | wxEXPAND, 10);
+
+
+		wxBoxSizer* bottomButtonSizer = new wxBoxSizer(wxHORIZONTAL);
+		wxButton* saveButton = new wxButton(this, wxID_ANY, "保存");
+		wxButton* cancelButton = new wxButton(this, wxID_ANY, "取消");
+		bottomButtonSizer->Add(saveButton, 0, wxALL, 5);
+		bottomButtonSizer->Add(cancelButton, 0, wxALL, 5);
+
+		mainSizer->Add(topSizer, 1, wxALL | wxEXPAND, 5);
+		mainSizer->Add(bottomButtonSizer, 0, wxALIGN_CENTER);
+
+		SetSizerAndFit(mainSizer);
+
+		lineToolButton->Bind(wxEVT_BUTTON, &CustomComponentEditor::ONLINE, this);
+		bezierToolButton->Bind(wxEVT_BUTTON, &CustomComponentEditor::ONCURVE, this);
+
+		saveButton->Bind(wxEVT_BUTTON, &CustomComponentEditor::OnSave, this);
+		cancelButton->Bind(wxEVT_BUTTON, &CustomComponentEditor::OnCancel, this);
+	}
+
+private:
+	CustomDrawBoard* customDrawBoard;
+
+	void ONLINE(wxCommandEvent& event) {
+		customDrawBoard->isLineDrawing = true;
+	}
+	void ONCURVE(wxCommandEvent& event) {
+		customDrawBoard->isBezierDrawing = true;
+
+	}
+
+	void OnSave(wxCommandEvent& event) {
+		// 获取 CustomDrawBoard 中绘制的数据
+		//auto shapes = customDrawBoard->GetShapes(); // 假设有一个方法可以获取绘制的图形
+		//SaveComponent(shapes); // 保存逻辑
+		wxMessageBox("元器件已保存！", "提示", wxOK | wxICON_INFORMATION);
+		Close();
+	}
+
+	void OnCancel(wxCommandEvent& event) {
+		Close(); // 关闭窗口
+	}
+
+	//void SaveComponent(const std::vector<Shape>& shapes) {
+		// 将 shapes 数据保存到文件或内存中
+	//}
 };

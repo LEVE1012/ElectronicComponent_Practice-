@@ -544,24 +544,44 @@ void DrawBoard::OnLeftClick(wxMouseEvent& event) {
             }
         }
     }
-    if (placingAndGate || placingOrGate || placingNotGate) {
+    if (placingAndGate || placingOrGate || placingNotGate || placingResistor || placingCapacitor ||
+        placingDiode || placingPower) {
         if (placingAndGate) {
             Component newComponent = Component(mousePos, ANDGate);
             Components.push_back(newComponent);
-
         }
         else if (placingOrGate) {
             Component newComponent = Component(mousePos, ORGate);
             Components.push_back(newComponent);
-
         }
         else if (placingNotGate) {
             Component newComponent = Component(mousePos, NOTGate);
             Components.push_back(newComponent);
         }
+        else if (placingResistor) {
+            Component newComponent = Component(mousePos, Resistor);
+            Components.push_back(newComponent);
+        }
+        else if (placingCapacitor) {
+            Component newComponent = Component(mousePos, Capacitor);
+            Components.push_back(newComponent);
+        }
+        else if (placingDiode) {
+            Component newComponent = Component(mousePos, Diode);
+            Components.push_back(newComponent);
+        }
+        else if (placingPower) {
+            Component newComponent = Component(mousePos, Power);
+            Components.push_back(newComponent);
+        }
         placingAndGate = false;
         placingOrGate = false;
         placingNotGate = false;
+        placingResistor = false;
+        placingCapacitor = false;
+        placingDiode = false;
+        placingPower = false;
+
     }
     if (placingTextBox) {
         TextBox newTextBox(mousePosition, "ÐÂÎÄ±¾");

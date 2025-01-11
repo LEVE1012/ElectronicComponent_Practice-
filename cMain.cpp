@@ -13,13 +13,18 @@ wxEND_EVENT_TABLE()
 
 enum DrawMode {
 	MODE_NONE,          // 无操作
+	MODE_CUSTOM,		// 自定义
 	MODE_LINE,          // 直线绘制
 	MODE_FREE_CURVE,    // 自由曲线
 	MODE_BEZIER_CURVE,  // 贝塞尔曲线
 	MODE_AND_GATE,      // 与门
 	MODE_OR_GATE,       // 或门
 	MODE_NOT_GATE,      // 非门
-	MODE_TEXT_BOX		//文本框
+	MODE_TEXT_BOX,		//文本框
+	MODE_RESISTOR,
+	MODE_CAPACITOR,
+	MODE_DIODE,
+	MODE_POWER
 };
 
 DrawMode currentMode = MODE_NONE;
@@ -33,31 +38,50 @@ cMain::cMain() : wxFrame(nullptr, wxID_ANY, "Hello wxWidgets!", wxPoint(30, 30),
 
 	wxInitAllImageHandlers();
 
-	lineImage = CreateImage(lineImage, "resource/image/select.png");
+	noneImage = CreateImage(noneImage, "resource/image/select.png");
+	lineImage = CreateImage(lineImage, "resource/image/line.png");
+	freeImage = CreateImage(freeImage, "resource/image/free.png");
+	curveImage = CreateImage(curveImage, "resource/image/curve.png");
 	andGateImage = CreateImage(andGateImage, "resource/image/andgate.png");
 	orGateImage = CreateImage(orGateImage, "resource/image/orgate.png");
 	notGateImage = CreateImage(notGateImage, "resource/image/notgate.png");
 	textBoxImage = CreateImage(textBoxImage, "resource/image/textbox.png");
+	resistorImage = CreateImage(resistorImage, "resource/image/resistor.png");
+	capacitorImage = CreateImage(capacitorImage, "resource/image/capacitor.png");
+	diodeImage = CreateImage(diodeImage, "resource/image/diode.png");
+	powerImage = CreateImage(powerImage, "resource/image/power.png");
 
-	m_btn1 = new wxBitmapButton(this, wxID_ANY, lineImage, wxPoint(10, 70), wxSize(50, 50));
-	Bind(wxEVT_BUTTON, &cMain::OnStraightLineButtonClicked, this, m_btn1->GetId());
-	m_btn2 = new wxBitmapButton(this, wxID_ANY + 1, lineImage, wxPoint(10, 130), wxSize(50, 50));
-	Bind(wxEVT_BUTTON, &cMain::OnFreeCurveButtonClicked, this, m_btn2->GetId());
-	BezierCurve_btn = new wxBitmapButton(this, wxID_ANY + 2, lineImage, wxPoint(10, 190), wxSize(50, 50));
+	custom_btn = new wxBitmapButton(this, wxID_ANY + 300, customImage, wxPoint(10, 10), wxSize(40, 40));
+	Bind(wxEVT_BUTTON, &cMain::OnCustomComponentButtonClicked, this, custom_btn->GetId());
+	none_btn = new wxBitmapButton(this, wxID_ANY + 301, noneImage, wxPoint(10, 60), wxSize(40, 40));
+	Bind(wxEVT_BUTTON, &cMain::OnNoneButtonClicked, this, none_btn->GetId());
+	Line_btn = new wxBitmapButton(this, wxID_ANY, lineImage, wxPoint(10, 110), wxSize(40, 40));
+	Bind(wxEVT_BUTTON, &cMain::OnStraightLineButtonClicked, this, Line_btn->GetId());
+	Free_btn = new wxBitmapButton(this, wxID_ANY + 1, freeImage, wxPoint(10, 160), wxSize(40, 40));
+	Bind(wxEVT_BUTTON, &cMain::OnFreeCurveButtonClicked, this, Free_btn->GetId());
+	BezierCurve_btn = new wxBitmapButton(this, wxID_ANY + 2, curveImage, wxPoint(10, 210), wxSize(40, 40));
 	Bind(wxEVT_BUTTON, &cMain::OnBezierCurveButtonClicked, this, BezierCurve_btn->GetId());
-	andGate_btn = new wxBitmapButton(this, wxID_ANY + 3, andGateImage, wxPoint(10, 250), wxSize(50, 50));
+	andGate_btn = new wxBitmapButton(this, wxID_ANY + 3, andGateImage, wxPoint(10, 260), wxSize(40, 40));
 	Bind(wxEVT_BUTTON, &cMain::OnAndGateButtonClicked, this, andGate_btn->GetId());
-	orGate_btn = new wxBitmapButton(this, wxID_ANY + 4, orGateImage, wxPoint(10, 310), wxSize(50, 50));
+	orGate_btn = new wxBitmapButton(this, wxID_ANY + 4, orGateImage, wxPoint(10, 310), wxSize(40, 40));
 	Bind(wxEVT_BUTTON, &cMain::OnOrGateButtonClicked, this, orGate_btn->GetId());
-	notGate_btn = new wxBitmapButton(this, wxID_ANY + 5, notGateImage, wxPoint(10, 370), wxSize(50, 50));
+	notGate_btn = new wxBitmapButton(this, wxID_ANY + 5, notGateImage, wxPoint(10, 360), wxSize(40, 40));
 	Bind(wxEVT_BUTTON, &cMain::OnNotGateButtonClicked, this, notGate_btn->GetId());
-	textBox_btn = new wxBitmapButton(this, wxID_ANY + 6, textBoxImage, wxPoint(10, 430), wxSize(50, 50));
+	textBox_btn = new wxBitmapButton(this, wxID_ANY + 6, textBoxImage, wxPoint(10, 410), wxSize(40, 40));
 	Bind(wxEVT_BUTTON, &cMain::OnTextBoxButtonClicked, this, textBox_btn->GetId());
-
+	resistor_btn = new wxBitmapButton(this, wxID_ANY + 7, resistorImage, wxPoint(10, 460), wxSize(40, 40));
+	Bind(wxEVT_BUTTON, &cMain::OnResistorButtonClicked, this, resistor_btn->GetId());
+	capacitor_btn = new wxBitmapButton(this, wxID_ANY + 8, capacitorImage, wxPoint(10, 510), wxSize(40, 40));
+	Bind(wxEVT_BUTTON, &cMain::OnCapacitorButtonClicked, this, capacitor_btn->GetId());
+	diode_btn = new wxBitmapButton(this, wxID_ANY + 9, diodeImage, wxPoint(10, 560), wxSize(40, 40));
+	Bind(wxEVT_BUTTON, &cMain::OnDiodeButtonClicked, this, diode_btn->GetId());
+	power_btn = new wxBitmapButton(this, wxID_ANY + 10, powerImage, wxPoint(10, 610), wxSize(40, 40));
+	Bind(wxEVT_BUTTON, &cMain::OnPowerButtonClicked, this, power_btn->GetId());
+#pragma region 布局设置
 	//创建主布局
 	wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
 	SetSizer(mainSizer);
-	
+
 	//上方按钮的布局
 	wxBoxSizer* topSizer = new wxBoxSizer(wxHORIZONTAL);
 	wxPanel* topPanel = new wxPanel(this);
@@ -112,7 +136,7 @@ cMain::cMain() : wxFrame(nullptr, wxID_ANY, "Hello wxWidgets!", wxPoint(30, 30),
 	propertySizer->Add(angleCtrl, 0, wxALL | wxEXPAND, 5);
 
 	//输入状态(in1, in2)
-	wxStaticText * inLabel = new wxStaticText(propertyPanel, wxID_ANY, "输入状态:");
+	wxStaticText* inLabel = new wxStaticText(propertyPanel, wxID_ANY, "输入状态:");
 	wxTextCtrl* in1Ctrl = new wxTextCtrl(propertyPanel, wxID_ANY + 106, "-");
 	wxTextCtrl* in2Ctrl = new wxTextCtrl(propertyPanel, wxID_ANY + 107, "-");
 	wxBoxSizer* inSizer = new wxBoxSizer(wxHORIZONTAL);
@@ -134,23 +158,33 @@ cMain::cMain() : wxFrame(nullptr, wxID_ANY, "Hello wxWidgets!", wxPoint(30, 30),
 
 	drawboard = new DrawBoard(this);
 	wxBoxSizer* controlBoard = new wxBoxSizer(wxVERTICAL);
-	controlBoard->Add(m_btn1, 0, wxALL | wxEXPAND, 5);
-	controlBoard->Add(m_btn2, 0, wxALL | wxEXPAND, 5);
+	controlBoard->Add(custom_btn, 0, wxALL | wxEXPAND, 5);
+	controlBoard->Add(none_btn, 0, wxALL | wxEXPAND, 5);
+	controlBoard->Add(Line_btn, 0, wxALL | wxEXPAND, 5);
+	controlBoard->Add(Free_btn, 0, wxALL | wxEXPAND, 5);
 	controlBoard->Add(BezierCurve_btn, 0, wxALL | wxEXPAND, 5);
 	controlBoard->Add(andGate_btn, 0, wxALL | wxEXPAND, 5);
 	controlBoard->Add(orGate_btn, 0, wxALL | wxEXPAND, 5);
 	controlBoard->Add(notGate_btn, 0, wxALL | wxEXPAND, 5);
 	controlBoard->Add(textBox_btn, 0, wxALL | wxEXPAND, 5);
+	controlBoard->Add(resistor_btn, 0, wxALL | wxEXPAND, 5);
+	controlBoard->Add(capacitor_btn, 0, wxALL | wxEXPAND, 5);
+	controlBoard->Add(diode_btn, 0, wxALL | wxEXPAND, 5);
+	controlBoard->Add(power_btn, 0, wxALL | wxEXPAND, 5);
 	bottomSizer->Add(propertyPanel, 0, wxALL | wxEXPAND, 5);
-	bottomSizer->Add(drawboard, 1, wxALL | wxEXPAND, 5); 
-	bottomSizer->Add(controlBoard, 0, wxALL | wxEXPAND, 5); 
+	bottomSizer->Add(drawboard, 1, wxALL | wxEXPAND, 5);
+	bottomSizer->Add(controlBoard, 0, wxALL | wxEXPAND, 5);
 	mainSizer->Add(bottomSizer, 1, wxALL | wxEXPAND, 5);
 
+#pragma endregion
+
+	
 	//设置按钮绑定事件
 	fileBtn->Bind(wxEVT_BUTTON, &cMain::OnFileButtonClicked, this);
 	propertyBtn->Bind(wxEVT_BUTTON, &cMain::OnPropertyButtonClicked, this);
 	windowBtn->Bind(wxEVT_BUTTON, &cMain::OnWindowButtonClicked, this);
 	dataBtn->Bind(wxEVT_BUTTON, &cMain::OnDataButtonClicked, this);
+	custom_btn->Bind(wxEVT_BUTTON, &cMain::OnCustomComponentButtonClicked, this);
 }
 
 //加载图片
@@ -163,6 +197,10 @@ wxBitmap cMain::CreateImage(wxBitmap image, wxString path) {
 
 }
 
+void cMain::OnNoneButtonClicked(wxCommandEvent& evt) {
+	currentMode = MODE_NONE;
+	UpdateDrawingState();
+}
 void cMain::OnStraightLineButtonClicked(wxCommandEvent& evt) {
 	currentMode = MODE_LINE;
 	UpdateDrawingState();
@@ -201,6 +239,8 @@ void cMain::UpdateDrawingState() {
 	drawboard->placingAndGate = false;
 	drawboard->placingOrGate = false;
 	drawboard->placingNotGate = false;
+	drawboard->placingResistor = false;
+	drawboard->placingPower = false;
 
 	switch (currentMode) {
 	case MODE_LINE:
@@ -224,6 +264,19 @@ void cMain::UpdateDrawingState() {
 	case MODE_TEXT_BOX:
 		drawboard->placingTextBox = true;
 		break;
+	case MODE_RESISTOR:
+		drawboard->placingResistor = true;
+		break;
+	case MODE_CAPACITOR:
+		drawboard->placingCapacitor = true;
+		break;
+	case MODE_DIODE:
+		drawboard->placingDiode = true;
+		break;
+	case MODE_POWER:
+		drawboard->placingPower = true;
+		break;
+
 	default:
 		break;
 	}
@@ -232,11 +285,11 @@ void cMain::OnFileButtonClicked(wxCommandEvent& event)
 {
 	wxMenu fileMenu;
 
-	fileMenu.Append(wxID_ANY, "导入");
-	fileMenu.Append(wxID_ANY, "导出");
-	fileMenu.Append(wxID_ANY, "保存");
-	fileMenu.Append(wxID_ANY, "另存为");
-	fileMenu.Append(wxID_ANY, "主题");
+	fileMenu.Append(wxID_ANY, "导入json");
+	fileMenu.Append(wxID_ANY, "导出json");
+	fileMenu.Append(wxID_ANY, "导入txt");
+	fileMenu.Append(wxID_ANY, "导出txt");
+	fileMenu.Append(wxID_ANY, "打印PNG");
 	fileMenu.Append(wxID_ANY, "版本");
 
 	PopupMenu(&fileMenu);
@@ -291,6 +344,18 @@ void cMain::UpdatePropertyPanel() {
 			else if (selectedComponent->type == NOTGate) {
 				nameCtrl->SetValue("非门");
 			}
+			else if (selectedComponent->type == Resistor) {
+				nameCtrl->SetValue("电阻");
+			}
+			else if (selectedComponent->type == Capacitor) {
+				nameCtrl->SetValue("电容");
+			}
+			else if (selectedComponent->type == Diode) {
+				nameCtrl->SetValue("二极管");
+			}
+			else if (selectedComponent->type == Power) {
+				nameCtrl->SetValue("电流源");
+			}
 		}
 
 		//位置
@@ -318,11 +383,32 @@ void cMain::UpdatePropertyPanel() {
 	
 	propertyPanel->Layout();
 }
-
 void cMain::OnTimer(wxTimerEvent& event) {
 	UpdatePropertyPanel();
 }
-
+void cMain::OnCustomComponentButtonClicked(wxCommandEvent& event) {
+	currentMode = MODE_CUSTOM;
+	UpdateDrawingState();
+	CustomComponentEditor* editor = new CustomComponentEditor(this);
+	editor->ShowModal();
+	editor->Destroy();
+}
+void cMain::OnResistorButtonClicked(wxCommandEvent& event) {
+	currentMode = MODE_RESISTOR;
+	UpdateDrawingState();
+}
+void cMain::OnCapacitorButtonClicked(wxCommandEvent& event) {
+	currentMode = MODE_CAPACITOR;
+	UpdateDrawingState();
+}
+void cMain::OnDiodeButtonClicked(wxCommandEvent& event) {
+	currentMode = MODE_DIODE;
+	UpdateDrawingState();
+}
+void cMain::OnPowerButtonClicked(wxCommandEvent& event) {
+	currentMode = MODE_POWER;
+	UpdateDrawingState();
+}
 cMain::~cMain() {
 	if (refreshTimer) {
 		refreshTimer->Stop();

@@ -22,6 +22,11 @@ public:
 	bool placingOrGate;
 	bool placingNotGate;
 	bool placingTextBox;
+	bool placingResistor;
+	bool placingCapacitor;
+	bool placingDiode;
+	bool placingPower;
+
 	double initialAngle;
 
 	float scale = 1.0f;//画布大小比例
@@ -91,6 +96,37 @@ public:
 	std::vector<Component> GetAllComponents() const {
 		return Components;
 	}
+	void StartBezierDrawing() {
+		isBezierDrawing = true;  // 开始贝塞尔曲线绘制
+		isLineDrawing = false;   // 停止直线绘制
+		wxLogMessage("贝塞尔曲线绘制模式已启用");
+	}
 
+	void StartLineDrawing() {
+		isLineDrawing = true;    // 开始直线绘制
+		isBezierDrawing = false; // 停止贝塞尔曲线绘制
+		wxLogMessage("直线绘制模式已启用");
+	}
 	wxDECLARE_EVENT_TABLE();
+};
+
+class CustomDrawBoard : public DrawBoard {
+public:
+	CustomDrawBoard(wxWindow* parent)
+		: DrawBoard(static_cast<wxFrame*>(parent)) { // 传递父窗口参数
+		SetSize(800, 800); // 限制绘图板大小
+		SetBackgroundColour(*wxWHITE); // 设置背景色
+	}
+
+	void OnPaint(wxPaintEvent& event) {
+		wxBufferedPaintDC dc(this);
+		PrepareDC(dc);
+
+		wxSize size = GetSize();
+		dc.SetBrush(*wxTRANSPARENT_BRUSH);
+		dc.SetPen(wxPen(*wxBLACK, 2, wxPENSTYLE_DOT));
+		dc.DrawRectangle(0, 0, size.x, size.y);
+
+		DrawBoard::OnPaint(event);
+	}
 };
