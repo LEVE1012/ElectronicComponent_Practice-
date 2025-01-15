@@ -29,6 +29,7 @@ public:
     wxPoint pin2;
     wxPoint pout;
     wxPoint points[4];
+    wxPoint initialPoints[4];
     wxPoint closePoint;
     wxPoint rotationCenter; // 旋转中心
     double rotationAngle = 0;   // 旋转角度，以弧度为单位
@@ -53,10 +54,10 @@ public:
 
     bool PointInside(const wxPoint& p) {
         wxPoint pPrime = RotatePoint(p, rotationCenter, -rotationAngle);
-        int left = points[0].x;
-        int right = points[2].x;
-        int top = points[0].y;
-        int bottom = points[1].y;
+        int left = initialPoints[0].x;
+        int right = initialPoints[2].x;
+        int top = initialPoints[0].y;
+        int bottom = initialPoints[1].y;
         return (pPrime.x >= left - 5  && pPrime.x <= right + 5 &&
             pPrime.y >= top - 5 && pPrime.y <= bottom + 5);
     }
@@ -151,7 +152,9 @@ public:
             pin1 = wxPoint(center.x - 40 * scale, center.y);
             pout = wxPoint(center.x + 40 * scale, center.y);
         }
-
+        for (int i = 0; i < 4; ++i) {
+            initialPoints[i] = points[i];
+        }
         // 旋转所有点位
         for (int i = 0; i < 4; ++i) {
             points[i] = RotatePoint(points[i], rotationCenter, rotationAngle);
@@ -396,8 +399,6 @@ public:
     }
 	~Component() {}        
 };
-
-
 
 class TextBox {
 public:

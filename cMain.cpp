@@ -30,7 +30,7 @@ enum DrawMode {
 DrawMode currentMode = MODE_NONE;
 
 //按钮设置及事件绑定
-cMain::cMain() : wxFrame(nullptr, wxID_ANY, "Hello wxWidgets!", wxPoint(30, 30), wxSize(800, 600))
+cMain::cMain(wxFrame* parent) : wxFrame(nullptr, wxID_ANY, "Hello wxWidgets!", wxPoint(30, 30), wxSize(800, 600))
 {	
 	refreshTimer = new wxTimer(this);
 	refreshTimer->Start(1000);  // 每隔1000毫秒触发一次
@@ -38,6 +38,7 @@ cMain::cMain() : wxFrame(nullptr, wxID_ANY, "Hello wxWidgets!", wxPoint(30, 30),
 
 	wxInitAllImageHandlers();
 
+	customImage = CreateImage(customImage, "resource/image/custom.png");
 	noneImage = CreateImage(noneImage, "resource/image/select.png");
 	lineImage = CreateImage(lineImage, "resource/image/line.png");
 	freeImage = CreateImage(freeImage, "resource/image/free.png");

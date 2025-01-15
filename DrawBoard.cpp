@@ -686,3 +686,4 @@ bool DrawBoard::IsPointInTextBox(wxPoint mousePos, TextBox textBox) {
     wxRect rect(textBox.position, textBox.size);
     return rect.Contains(mousePos);
 }
+

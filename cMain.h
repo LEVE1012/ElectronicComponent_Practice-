@@ -5,7 +5,7 @@
 class cMain : public wxFrame
 {
 public:
-	cMain();
+	cMain(wxFrame* parent);
 	~cMain();
 
 public:
